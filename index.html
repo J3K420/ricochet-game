@@ -2,16 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>RICOCHET</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #05060f; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05060f; overscroll-behavior: none; }
   body {
     font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-    color: #d6e6ff; cursor: none; user-select: none; -webkit-user-select: none; touch-action: none;
+    color: #d6e6ff; cursor: none; user-select: none; -webkit-user-select: none;
+    touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
   }
-  #game { display: block; position: fixed; inset: 0; }
+  #game { display: block; position: fixed; inset: 0; touch-action: none; }
   #overlay {
     position: fixed; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center; pointer-events: none;
@@ -537,11 +541,14 @@ function simStep(body, vel, dt, applyFric) {
   return { p: { x: px, y: py }, v: { x: vx, y: vy }, bounced };
 }
 
-/* ---- Input ----------------------------------------------------------- */
+/* ---- Input (mouse + touch, shared handlers) -------------------------- */
 const mouse = { x: VW / 2, y: VH / 2 };
-canvas.addEventListener('mousemove', e => { const p = toLogical(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y; });
-canvas.addEventListener('mousedown', e => {
-  if (e.button !== 0) return;
+let timeScaleAim = false;
+
+// Shared pointer handlers — mouse and touch both feed these so behaviour is identical.
+function pointerMove(cx, cy) { const p = toLogical(cx, cy); mouse.x = p.x; mouse.y = p.y; }
+function pointerDown(cx, cy) {
+  pointerMove(cx, cy); // touch has no hover; sync position to the press point first
   Audio.resume();
   if (game.state === 'menu' || game.state === 'gameover') { startGame(); return; }
   if (game.state !== 'playing') return;
@@ -556,9 +563,8 @@ canvas.addEventListener('mousedown', e => {
   } else if (orb.state === 'flying' && orb.hasPulse) {
     orb.pulseT0 = performance.now(); orb.pulseAnchor = { x: mouse.x, y: mouse.y }; orb.pulseCandidate = true;
   }
-});
-canvas.addEventListener('mouseup', e => {
-  if (e.button !== 0) return;
+}
+function pointerUp() {
   if (orb.state === 'aiming') { orb.release(); }
   else if (orb.state === 'flying' && orb.pulseCandidate) {
     orb.pulseCandidate = false;
@@ -567,10 +573,21 @@ canvas.addEventListener('mouseup', e => {
       orb.pulse(charged);
     }
   }
-});
+}
+
+// Mouse
+canvas.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
+canvas.addEventListener('mousedown', e => { if (e.button === 0) pointerDown(e.clientX, e.clientY); });
+canvas.addEventListener('mouseup', e => { if (e.button === 0) pointerUp(); });
+
+// Touch — preventDefault to stop scroll/zoom/pull-to-refresh stealing the drag.
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; if (t) pointerDown(t.clientX, t.clientY); }, { passive: false });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.changedTouches[0]; if (t) pointerMove(t.clientX, t.clientY); }, { passive: false });
+canvas.addEventListener('touchend', e => { e.preventDefault(); pointerUp(); }, { passive: false });
+canvas.addEventListener('touchcancel', e => { e.preventDefault(); if (orb.state === 'aiming') orb.cancelAim(); }, { passive: false });
+
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('blur', () => { if (orb.state === 'aiming') orb.cancelAim(); });
-let timeScaleAim = false;
 
 /* ---- Enemies --------------------------------------------------------- */
 const enemies = [];
